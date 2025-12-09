@@ -1,249 +1,129 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, RefreshCw, Radio } from 'lucide-react';
-import { AppLanguage, ChatMessage, TranslationResource } from '../types';
-import { SUPPORTED_LANGUAGES } from '../constants';
 import { LiveClient } from '../services/liveClient';
+import { AppLanguage } from '../types';
 
-interface ConversationModeProps {
-  uiLang: AppLanguage;
-  t: TranslationResource;
+interface Message {
+  id: string;
+  text: string;
+  isUser: boolean;
+  isFinal: boolean;
 }
 
-const ConversationMode: React.FC<ConversationModeProps> = ({ uiLang, t }) => {
-  const [langA, setLangA] = useState<AppLanguage>(AppLanguage.ZH);
-  const [langB, setLangB] = useState<AppLanguage>(AppLanguage.EN);
+interface Props {
+  sourceLang: AppLanguage;
+  targetLang: AppLanguage;
+}
+
+export default function ConversationMode({ sourceLang, targetLang }: Props) {
   const [isActive, setIsActive] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'connecting' | 'active' | 'error'>('idle');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  
-  // Real-time transcript buffers
-  const [userTranscript, setUserTranscript] = useState('');
-  const [aiTranscript, setAiTranscript] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const clientRef = useRef<LiveClient | null>(null);
 
-  const liveClientRef = useRef<LiveClient | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const nextStartTimeRef = useRef<number>(0);
-
+  // 初始化引擎
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, userTranscript, aiTranscript]);
+    clientRef.current = new LiveClient({
+      onOpen: () => {
+        console.log("Connected");
+      },
+      onClose: () => {
+        console.log("Disconnected");
+        setIsActive(false);
+      },
+      onTranscript: (text, isUser, isFinal) => {
+        // 收到文字，更新界面
+        setMessages(prev => {
+          const newMsg = { id: Date.now().toString(), text, isUser, isFinal };
+          // 简单的逻辑：如果是最终结果，就加新行；如果是临时结果，替换最后一行（这里简化处理直接追加，保证能看到）
+          return [...prev, newMsg];
+        });
+      },
+      onError: (err) => {
+        console.error(err);
+        setIsActive(false);
+        alert("出错啦: " + JSON.stringify(err));
+      }
+    });
 
-  useEffect(() => {
     return () => {
-      stopSession();
+      // 退出页面时自动挂断
+      clientRef.current?.disconnect();
     };
   }, []);
 
-  const playAudioChunk = (audioBuffer: AudioBuffer) => {
-    if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
-    }
-    const ctx = audioContextRef.current;
-    
-    // Simple queueing logic
-    const now = ctx.currentTime;
-    // If next start time is in the past, reset it to now
-    if (nextStartTimeRef.current < now) {
-        nextStartTimeRef.current = now;
-    }
+  const toggleRecording = async () => {
+    if (!clientRef.current) return;
 
-    const source = ctx.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(ctx.destination);
-    source.start(nextStartTimeRef.current);
-    
-    nextStartTimeRef.current += audioBuffer.duration;
-  };
-
-  const toggleSession = async () => {
     if (isActive) {
-      stopSession();
+      // 正在运行 -> 停止
+      clientRef.current.disconnect();
+      setIsActive(false);
     } else {
-      startSession();
-    }
-  };
-
-  const startSession = () => {
-    setStatus('connecting');
-    
-    // Initialize Live Client
-    const client = new LiveClient({
-        onOpen: () => {
-            setStatus('active');
-            setIsActive(true);
-        },
-        onClose: () => {
-            setStatus('idle');
-            setIsActive(false);
-        },
-        onError: () => {
-            setStatus('error');
-            setIsActive(false);
-        },
-        onAudioData: (buffer) => {
-            playAudioChunk(buffer);
-        },
-        onTranscript: (text, isUser, isFinal) => {
-            if (isUser) {
-                setUserTranscript(prev => prev + text);
-                // Simple heuristic to commit message to history on pause (optional)
-            } else {
-                setAiTranscript(prev => prev + text);
-            }
-        }
-    });
-
-    liveClientRef.current = client;
-    client.connect(langA, langB);
-  };
-
-  const stopSession = () => {
-    if (liveClientRef.current) {
-        liveClientRef.current.disconnect();
-        liveClientRef.current = null;
-    }
-    setIsActive(false);
-    setStatus('idle');
-    
-    // Commit any pending transcripts to history when stopping
-    if (userTranscript || aiTranscript) {
-        const newMessage: ChatMessage = {
-            id: Date.now().toString(),
-            text: userTranscript,
-            translation: aiTranscript,
-            sender: 'user',
-            originalLang: langA, // Approximation
-            timestamp: Date.now()
-        };
-        setMessages(prev => [...prev, newMessage]);
-        setUserTranscript('');
-        setAiTranscript('');
-    }
-  };
-
-  const swapLanguages = () => {
-    if (isActive) {
-        // Must restart to change system instructions or prompts effectively
-        stopSession();
-        setLangA(langB);
-        setLangB(langA);
-        setTimeout(startSession, 500); 
-    } else {
-        setLangA(langB);
-        setLangB(langA);
+      // 没运行 -> 开启
+      setIsActive(true);
+      setMessages([]); // 清空旧记录
+      try {
+        await clientRef.current.connect(sourceLang, targetLang);
+      } catch (e) {
+        setIsActive(false);
+        alert("启动失败: " + e);
+      }
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900 relative">
-      {/* Header */}
-      <div className="bg-white dark:bg-slate-800 p-4 shadow-sm z-10 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
-        <div className="flex items-center gap-2 flex-1 justify-center">
-            <span className="font-bold text-slate-800 dark:text-white">
-                {SUPPORTED_LANGUAGES.find(l => l.code === langA)?.label}
-            </span>
-        </div>
-        
-        <button onClick={swapLanguages} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors">
-            <RefreshCw size={20} />
-        </button>
-
-        <div className="flex items-center gap-2 flex-1 justify-center">
-             <span className="font-bold text-slate-800 dark:text-white">
-                {SUPPORTED_LANGUAGES.find(l => l.code === langB)?.label}
-            </span>
-        </div>
-      </div>
-
-      {/* Messages Area */}
+    <div className="flex flex-col h-full bg-gray-50">
+      {/* 聊天记录显示区 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && !isActive && (
-          <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 opacity-60">
-             <div className="w-24 h-24 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center mb-4">
-                <Radio size={40} />
-             </div>
-             <p className="text-center">Press the mic to start<br/>simultaneous interpretation</p>
+        {messages.length === 0 && isActive && (
+          <div className="text-center text-gray-400 mt-10 animate-pulse">
+            正在聆听中... 请说话...
           </div>
         )}
         
-        {/* History */}
-        {messages.map((msg) => (
-          <div key={msg.id} className="flex flex-col items-start bg-white dark:bg-slate-800 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
-              <p className="text-sm opacity-60 mb-1">{msg.text}</p>
-              <p className="text-lg font-medium text-blue-600 dark:text-blue-400">{msg.translation}</p>
+        {messages.length === 0 && !isActive && (
+          <div className="text-center text-gray-400 mt-10">
+            点击下方蓝色按钮开始同声传译
+          </div>
+        )}
+
+        {messages.map((msg, index) => (
+          <div
+            key={index}
+            className={`p-3 rounded-lg max-w-[80%] ${
+              msg.isUser
+                ? 'bg-blue-100 ml-auto text-blue-900'
+                : 'bg-white mr-auto text-gray-900 shadow-sm'
+            }`}
+          >
+            {msg.text}
           </div>
         ))}
-
-        {/* Live Active Transcripts */}
-        {isActive && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
-                {(userTranscript || aiTranscript) ? (
-                    <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-4 border border-blue-200 dark:border-blue-800">
-                        {userTranscript && (
-                             <div className="mb-2">
-                                <span className="text-xs font-bold text-blue-500 uppercase tracking-wider">Listening</span>
-                                <p className="text-slate-700 dark:text-slate-200 leading-relaxed">{userTranscript}</p>
-                             </div>
-                        )}
-                        {aiTranscript && (
-                             <div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-800/50">
-                                <span className="text-xs font-bold text-green-500 uppercase tracking-wider">Translating</span>
-                                <p className="text-xl font-bold text-slate-900 dark:text-white leading-relaxed">{aiTranscript}</p>
-                             </div>
-                        )}
-                        <div className="flex gap-1 mt-3">
-                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"></span>
-                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce delay-100"></span>
-                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce delay-200"></span>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="flex items-center justify-center py-8 text-blue-500">
-                        <span className="animate-pulse font-medium">Listening for speech...</span>
-                    </div>
-                )}
-            </div>
-        )}
-        
-        <div ref={messagesEndRef} />
       </div>
 
-      {/* Controls */}
-      <div className="p-6 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+      {/* 底部按钮区 */}
+      <div className="p-6 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
         <button
-            onClick={toggleSession}
-            disabled={status === 'connecting'}
-            className={`w-full h-20 rounded-2xl flex items-center justify-center gap-3 transition-all duration-200 touch-manipulation shadow-lg ${
-                isActive 
-                ? 'bg-red-500 hover:bg-red-600 shadow-red-500/30' 
-                : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/30'
-            } text-white disabled:opacity-70 disabled:cursor-not-allowed`}
+          onClick={toggleRecording}
+          className={`w-full py-4 rounded-xl text-white font-semibold text-lg transition-all duration-200 shadow-lg active:scale-95 flex items-center justify-center gap-2 ${
+            isActive
+              ? 'bg-red-500 hover:bg-red-600 shadow-red-200'
+              : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'
+          }`}
         >
-            {status === 'connecting' ? (
-                <span className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : isActive ? (
-                <>
-                    <div className="bg-white/20 p-3 rounded-full animate-pulse">
-                        <Mic size={32} />
-                    </div>
-                    <span className="font-bold text-xl">Stop Interpreter</span>
-                </>
-            ) : (
-                <>
-                    <div className="bg-white/20 p-3 rounded-full">
-                        <MicOff size={32} />
-                    </div>
-                    <span className="font-bold text-xl">Start Simultaneous Mode</span>
-                </>
-            )}
+          {isActive ? (
+            <>
+              <span className="animate-pulse">●</span> 停止翻译 (Stop)
+            </>
+          ) : (
+            <>
+              <span>🎙️</span> 开始同声传译 (Start)
+            </>
+          )}
         </button>
-        <p className="text-center text-xs text-slate-400 mt-3">
-            {isActive ? 'Simultaneous translation active. Just speak naturally.' : t.holdToSpeak}
+        <p className="text-center text-xs text-gray-400 mt-3">
+          {isActive ? "正在接收音频流..." : "点击开始后，请允许麦克风权限"}
         </p>
       </div>
     </div>
   );
-};
-
-export default ConversationMode;
+}
