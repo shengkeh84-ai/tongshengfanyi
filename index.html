@@ -1,6 +1,76 @@
 <!DOCTYPE html>
 <html lang="zh">
   <head>
+    <!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- 添加以下代码 -->
+    <style>
+        /* 防止按钮闪烁的CSS */
+        .mic-button, .record-btn {
+            transition: background-color 0.5s ease, transform 0.2s ease !important;
+        }
+        
+        .mic-button.recording {
+            background-color: #ff4444 !important;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        /* 防止快速点击 */
+        button:disabled {
+            cursor: not-allowed !important;
+        }
+        
+        /* 添加防抖点击效果 */
+        .debounce-click {
+            pointer-events: auto !important;
+        }
+    </style>
+    
+    <script>
+        // 全局防止双击/快速点击
+        let lastClickTime = 0;
+        document.addEventListener('click', function(e) {
+            if (e.target.tagName === 'BUTTON') {
+                const now = Date.now();
+                if (now - lastClickTime < 1000) { // 1秒内只允许点击一次
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                lastClickTime = now;
+            }
+        }, true);
+        
+        // 页面加载时检查localStorage
+        window.addEventListener('load', function() {
+            console.log('页面加载完成，检查本地存储');
+            
+            // 确保localStorage可用
+            try {
+                localStorage.setItem('test', 'test');
+                localStorage.removeItem('test');
+            } catch (e) {
+                console.warn('localStorage不可用，使用备用方案');
+                // 如果localStorage被禁用，使用内存存储
+                window.fallbackStorage = {};
+            }
+        });
+    </script>
+</head>
+<body>
+    <!-- 页面内容 -->
+</body>
+</html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
     <title>LinguaFlow - Simultaneous Translation</title>
