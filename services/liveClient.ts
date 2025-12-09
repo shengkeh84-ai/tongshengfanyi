@@ -2,7 +2,7 @@ import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
 import { encode, decode, decodeAudioData, float32ToInt16 } from "./audioUtils";
 import { AppLanguage } from "../types";
 
-const apiKey = process.env.API_KEY || '';
+const apiKey = import.meta.env.VITE_GOOGLE_API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
 export interface LiveClientCallbacks {
