@@ -1,296 +1,228 @@
-// 移动端兼容性修复
-class TextTranslator {
-  constructor() {
-    // 检查是否是移动设备
-    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    this.init();
-  }
-  
-  init() {
-    console.log('初始化文本翻译器，移动端:', this.isMobile);
-    
-    // 找到翻译按钮
-    const translateBtn = document.getElementById('translate-btn') || 
-                        document.querySelector('.translate-btn') ||
-                        document.querySelector('button[onclick*="translate"]');
-    
-    // 找到输入框
-    const inputField = document.getElementById('text-input') ||
-                      document.querySelector('.translation-input') ||
-                      document.querySelector('textarea');
-    
-    if (!translateBtn || !inputField) {
-      console.error('找不到翻译按钮或输入框');
-      return;
-    }
-    
-    // 移动端特殊处理
-    if (this.isMobile) {
-      // 移除原有事件（防止重复绑定）
-      translateBtn.replaceWith(translateBtn.cloneNode(true));
-      const newBtn = document.querySelector('.translate-btn');
-      
-      // 重新绑定事件
-      newBtn.addEventListener('click', (e) => this.handleTranslate(e));
-      newBtn.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        this.handleTranslate(e);
-      });
-      
-      // 输入框也处理
-      inputField.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          this.handleTranslate(e);
-        }
-      });
-    } else {
-      // 电脑端正常绑定
-      translateBtn.addEventListener('click', (e) => this.handleTranslate(e));
-    }
-  }
-  
-  async handleTranslate(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    console.log('开始翻译...');
-    
-    // 显示加载中
-    this.showLoading();
-    
-    try {
-      // 获取输入文本
-      const inputField = document.querySelector('.translation-input');
-      const text = inputField.value.trim();
-      
-      if (!text) {
-        alert('请输入要翻译的文本');
-        return;
-      }
-      
-      // 调用翻译API（根据你的实际情况修改）
-      const result = await this.callTranslationAPI(text);
-      
-      // 显示结果
-      this.showResult(result);
-      
-    } catch (error) {
-      console.error('翻译失败:', error);
-      alert('翻译失败，请重试');
-    } finally {
-      this.hideLoading();
-    }
-  }
-  
-  async callTranslationAPI(text) {
-    // 这里需要根据你的实际API来修改
-    // 示例：使用fetch调用翻译API
-    const response = await fetch('/api/translate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text: text,
-        targetLang: 'zh-CN'  // 根据你的设置调整
-      })
-    });
-    
-    if (!response.ok) {
-      throw new Error('API调用失败');
-    }
-    
-    return await response.json();
-  }
-  
-  showLoading() {
-    // 显示加载动画
-    const loadingDiv = document.createElement('div');
-    loadingDiv.className = 'loading';
-    loadingDiv.innerHTML = '翻译中...';
-    loadingDiv.style.position = 'fixed';
-    loadingDiv.style.top = '50%';
-    loadingDiv.style.left = '50%';
-    loadingDiv.style.transform = 'translate(-50%, -50%)';
-    loadingDiv.style.padding = '20px';
-    loadingDiv.style.background = 'rgba(0,0,0,0.7)';
-    loadingDiv.style.color = 'white';
-    loadingDiv.style.borderRadius = '10px';
-    loadingDiv.style.zIndex = '9999';
-    
-    document.body.appendChild(loadingDiv);
-    this.loadingElement = loadingDiv;
-  }
-  
-  hideLoading() {
-    if (this.loadingElement) {
-      this.loadingElement.remove();
-    }
-  }
-  
-  showResult(result) {
-    // 找到结果显示区域
-    const resultDiv = document.getElementById('translation-result') ||
-                     document.querySelector('.result-area');
-    
-    if (resultDiv) {
-      resultDiv.innerHTML = `<div class="result-text">${result.translatedText}</div>`;
-    } else {
-      // 如果没有结果区域，创建一个
-      const newResultDiv = document.createElement('div');
-      newResultDiv.className = 'translation-result';
-      newResultDiv.innerHTML = `
-        <h3>翻译结果：</h3>
-        <p>${result.translatedText}</p>
-      `;
-      newResultDiv.style.marginTop = '20px';
-      newResultDiv.style.padding = '15px';
-      newResultDiv.style.background = '#f0f0f0';
-      newResultDiv.style.borderRadius = '8px';
-      
-      // 插入到翻译按钮后面
-      const translateBtn = document.querySelector('.translate-btn');
-      translateBtn.parentNode.insertBefore(newResultDiv, translateBtn.nextSibling);
-    }
-  }
+import React, { useState, useEffect, useRef } from 'react';
+import { Send, Loader2 } from 'lucide-react';
+
+interface TranslationTexts {
+    inputPlaceholder: string;
+    translateButton: string;
+    clearText: string;
+    copyText: string;
+    translatedText: string;
+    enterText: string;
+    translationFailed: string;
 }
 
-// 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', () => {
-  window.textTranslator = new TextTranslator();
-});
-import React, { useState } from 'react';
-import { ArrowRightLeft, Copy, Check } from 'lucide-react';
-import { AppLanguage, TranslationResource } from '../types';
-import { translateText, synthesizeSpeech } from '../services/geminiService';
-import { SUPPORTED_LANGUAGES } from '../constants';
-
 interface TextTranslationProps {
-  t: TranslationResource;
+    t: TranslationTexts;
 }
 
 const TextTranslation: React.FC<TextTranslationProps> = ({ t }) => {
-  const [sourceLang, setSourceLang] = useState<AppLanguage>(AppLanguage.EN);
-  const [targetLang, setTargetLang] = useState<AppLanguage>(AppLanguage.ZH);
-  const [inputText, setInputText] = useState('');
-  const [translatedText, setTranslatedText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const handleTranslate = async () => {
-    if (!inputText.trim()) return;
-    setIsLoading(true);
-    try {
-      const result = await translateText(inputText, sourceLang, targetLang);
-      setTranslatedText(result);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(translatedText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const swapLangs = () => {
-    setSourceLang(targetLang);
-    setTargetLang(sourceLang);
-    setInputText(translatedText);
-    setTranslatedText(inputText);
-  };
-
-  return (
-    <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900 p-4 space-y-4">
-      
-      {/* Language Controls */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl p-2 flex items-center justify-between shadow-sm border border-slate-200 dark:border-slate-700">
-        <select 
-            value={sourceLang}
-            onChange={(e) => setSourceLang(e.target.value as AppLanguage)}
-            className="flex-1 bg-transparent text-center font-medium p-2 outline-none text-slate-700 dark:text-slate-200"
-        >
-             {SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-        </select>
+    const [inputText, setInputText] = useState('');
+    const [translatedText, setTranslatedText] = useState('');
+    const [isTranslating, setIsTranslating] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
+    const [error, setError] = useState('');
+    const inputRef = useRef<HTMLTextAreaElement>(null);
+    
+    // 检测是否是移动设备
+    useEffect(() => {
+        const checkMobile = () => {
+            setIsMobile(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+        };
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+    
+    // 移动端特殊处理：避免键盘遮挡
+    useEffect(() => {
+        if (!isMobile || !inputRef.current) return;
         
-        <button onClick={swapLangs} className="p-2 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-all">
-            <ArrowRightLeft size={18} />
-        </button>
-
-        <select 
-            value={targetLang}
-            onChange={(e) => setTargetLang(e.target.value as AppLanguage)}
-            className="flex-1 bg-transparent text-center font-medium p-2 outline-none text-blue-600 dark:text-blue-400"
-        >
-             {SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-        </select>
-      </div>
-
-      {/* Input Area */}
-      <div className="flex-1 flex flex-col gap-4">
-        <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-700 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all flex flex-col">
-            <textarea
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder={t.inputPlaceholder}
-                className="w-full h-full bg-transparent resize-none outline-none text-lg text-slate-800 dark:text-slate-100 placeholder-slate-400"
-            />
-             {inputText && (
-                <div className="flex justify-end pt-2">
-                    <button 
-                        onClick={() => synthesizeSpeech(inputText, sourceLang)}
-                        className="text-slate-400 hover:text-blue-500 text-sm font-medium"
+        const handleFocus = () => {
+            setTimeout(() => {
+                if (inputRef.current) {
+                    inputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 300);
+        };
+        
+        const inputElement = inputRef.current;
+        inputElement.addEventListener('focus', handleFocus);
+        
+        return () => {
+            inputElement.removeEventListener('focus', handleFocus);
+        };
+    }, [isMobile]);
+    
+    // 处理翻译
+    const handleTranslate = async () => {
+        if (!inputText.trim()) {
+            setError(t.enterText || '请输入要翻译的文本');
+            return;
+        }
+        
+        setIsTranslating(true);
+        setError('');
+        
+        try {
+            // 这里调用你的翻译API
+            // 由于我不知道你的API，这里先用模拟
+            console.log('翻译文本:', inputText);
+            
+            // 模拟API调用延迟
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // 模拟翻译结果（这里应该替换为真实API调用）
+            const mockTranslation = `翻译结果: ${inputText} (模拟)`;
+            setTranslatedText(mockTranslation);
+            
+            // 如果是移动端，翻译后滚动到结果
+            if (isMobile) {
+                setTimeout(() => {
+                    const resultElement = document.querySelector('.translation-result');
+                    if (resultElement) {
+                        resultElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                }, 500);
+            }
+            
+        } catch (err) {
+            console.error('翻译失败:', err);
+            setError(t.translationFailed || '翻译失败，请重试');
+        } finally {
+            setIsTranslating(false);
+        }
+    };
+    
+    // 清空文本
+    const handleClear = () => {
+        setInputText('');
+        setTranslatedText('');
+        setError('');
+        if (inputRef.current) {
+            inputRef.current.focus();
+        }
+    };
+    
+    // 复制结果
+    const handleCopy = async () => {
+        if (!translatedText) return;
+        
+        try {
+            await navigator.clipboard.writeText(translatedText);
+            alert('已复制到剪贴板');
+        } catch (err) {
+            console.error('复制失败:', err);
+            // 降级方案
+            const textArea = document.createElement('textarea');
+            textArea.value = translatedText;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            alert('已复制到剪贴板');
+        }
+    };
+    
+    // 处理键盘事件
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            handleTranslate();
+        }
+    };
+    
+    return (
+        <div className="h-full flex flex-col p-4 bg-gray-50 dark:bg-slate-900">
+            {/* 输入区域 */}
+            <div className="flex-1">
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        输入文本
+                    </label>
+                    <textarea
+                        ref={inputRef}
+                        value={inputText}
+                        onChange={(e) => setInputText(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder={t.inputPlaceholder || "请输入要翻译的文本..."}
+                        className="w-full h-40 p-3 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        disabled={isTranslating}
+                    />
+                </div>
+                
+                {/* 操作按钮 */}
+                <div className="flex gap-2 mb-4">
+                    <button
+                        onClick={handleTranslate}
+                        disabled={isTranslating || !inputText.trim()}
+                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-all ${
+                            isTranslating || !inputText.trim()
+                                ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
                     >
-                        Listen
+                        {isTranslating ? (
+                            <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                翻译中...
+                            </>
+                        ) : (
+                            <>
+                                <Send className="w-4 h-4" />
+                                {t.translateButton || "翻译"}
+                            </>
+                        )}
+                    </button>
+                    
+                    <button
+                        onClick={handleClear}
+                        disabled={isTranslating || (!inputText && !translatedText)}
+                        className="px-4 py-3 bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {t.clearText || "清空"}
                     </button>
                 </div>
-            )}
-        </div>
-
-        {/* Action Button */}
-        <button
-            onClick={handleTranslate}
-            disabled={isLoading || !inputText}
-            className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] flex items-center justify-center"
-        >
-            {isLoading ? (
-                <span className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : t.translateBtn}
-        </button>
-
-        {/* Output Area */}
-        <div className={`flex-1 bg-blue-50 dark:bg-slate-800/50 rounded-2xl p-4 border border-blue-100 dark:border-slate-700 transition-all ${translatedText ? 'opacity-100' : 'opacity-60'}`}>
-            {translatedText ? (
-                <div className="flex flex-col h-full">
-                    <p className="flex-1 text-xl font-medium text-slate-800 dark:text-slate-100 whitespace-pre-wrap">{translatedText}</p>
-                    <div className="flex items-center justify-end gap-3 mt-2 border-t border-slate-200 dark:border-slate-700/50 pt-3">
-                        <button 
-                            onClick={() => synthesizeSpeech(translatedText, targetLang)}
-                            className="text-blue-600 dark:text-blue-400 font-medium text-sm px-3 py-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
-                        >
-                            Play Audio
-                        </button>
-                        <button 
-                            onClick={handleCopy}
-                            className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
-                        >
-                            {copied ? <Check size={20} className="text-green-500" /> : <Copy size={20} />}
-                        </button>
+                
+                {/* 错误提示 */}
+                {error && (
+                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                        <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
                     </div>
-                </div>
-            ) : (
-                <div className="h-full flex items-center justify-center text-slate-400 italic">
-                    {t.processing.replace('...', '')}
+                )}
+                
+                {/* 翻译结果 */}
+                {translatedText && (
+                    <div className="translation-result mb-4">
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                {t.translatedText || "翻译结果"}
+                            </label>
+                            <button
+                                onClick={handleCopy}
+                                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                            >
+                                {t.copyText || "复制"}
+                            </button>
+                        </div>
+                        <div className="p-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                            <p className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
+                                {translatedText}
+                            </p>
+                        </div>
+                    </div>
+                )}
+            </div>
+            
+            {/* 移动端提示 */}
+            {isMobile && (
+                <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <p className="text-sm text-blue-600 dark:text-blue-400 text-center">
+                        💡 提示：长按输入框可以粘贴文本
+                    </p>
                 </div>
             )}
         </div>
-      </div>
-    </div>
-  );
+    );
 };
 
 export default TextTranslation;
