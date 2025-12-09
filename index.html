@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=0, viewport-fit=cover">
-    <title>LinguaFlow - Simultaneous Translation</title>
+    <title>网页传送 Pro - 同声翻译</title>
     
     <!-- PWA Settings -->
     <link rel="manifest" href="/manifest.json">
@@ -16,7 +16,7 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- 添加以下代码 -->
+    <!-- 添加修复样式 -->
     <style>
         /* 防止按钮闪烁的CSS */
         .mic-button, .record-btn {
@@ -37,11 +37,6 @@
         /* 防止快速点击 */
         button:disabled {
             cursor: not-allowed !important;
-        }
-        
-        /* 添加防抖点击效果 */
-        .debounce-click {
-            pointer-events: auto !important;
         }
         
         /* Mobile safe area fix */
@@ -81,7 +76,12 @@
     </script>
     
     <link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-gray-100 no-select">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
     
+    <!-- 修复脚本放在body最后 -->
     <script>
         // 全局防止双击/快速点击
         let lastClickTime = 0;
@@ -108,14 +108,9 @@
                 console.log('localStorage 可用');
             } catch (e) {
                 console.warn('localStorage不可用，使用备用方案');
-                // 如果localStorage被禁用，使用内存存储
                 window.fallbackStorage = {};
             }
         });
     </script>
-</head>
-<body class="bg-gray-100 no-select">
-    <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
 </body>
 </html>
