@@ -1,3 +1,23 @@
+// 在App组件开头添加状态管理
+const App: React.FC = () => {
+  const [uiLang, setUiLang] = useState<AppLanguage>(AppLanguage.ZH);
+  const [activeTab, setActiveTab] = useState<'conversation' | 'text' | 'call' | 'settings'>('conversation');
+  const [isOffline, setIsOffline] = useState(false);
+  
+  // 从localStorage加载离线模式状态
+  useEffect(() => {
+    const savedOffline = localStorage.getItem('offline_mode');
+    if (savedOffline !== null) {
+      setIsOffline(savedOffline === 'true');
+    }
+  }, []);
+
+  // 保存离线模式状态
+  useEffect(() => {
+    localStorage.setItem('offline_mode', isOffline.toString());
+  }, [isOffline]);
+
+  // ... 其他代码保持不变 ...
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, Mic, Settings, WifiOff, Phone } from 'lucide-react';
 import { AppLanguage } from './types';
