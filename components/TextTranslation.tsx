@@ -1,3 +1,165 @@
+// 移动端兼容性修复
+class TextTranslator {
+  constructor() {
+    // 检查是否是移动设备
+    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    this.init();
+  }
+  
+  init() {
+    console.log('初始化文本翻译器，移动端:', this.isMobile);
+    
+    // 找到翻译按钮
+    const translateBtn = document.getElementById('translate-btn') || 
+                        document.querySelector('.translate-btn') ||
+                        document.querySelector('button[onclick*="translate"]');
+    
+    // 找到输入框
+    const inputField = document.getElementById('text-input') ||
+                      document.querySelector('.translation-input') ||
+                      document.querySelector('textarea');
+    
+    if (!translateBtn || !inputField) {
+      console.error('找不到翻译按钮或输入框');
+      return;
+    }
+    
+    // 移动端特殊处理
+    if (this.isMobile) {
+      // 移除原有事件（防止重复绑定）
+      translateBtn.replaceWith(translateBtn.cloneNode(true));
+      const newBtn = document.querySelector('.translate-btn');
+      
+      // 重新绑定事件
+      newBtn.addEventListener('click', (e) => this.handleTranslate(e));
+      newBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        this.handleTranslate(e);
+      });
+      
+      // 输入框也处理
+      inputField.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.handleTranslate(e);
+        }
+      });
+    } else {
+      // 电脑端正常绑定
+      translateBtn.addEventListener('click', (e) => this.handleTranslate(e));
+    }
+  }
+  
+  async handleTranslate(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    console.log('开始翻译...');
+    
+    // 显示加载中
+    this.showLoading();
+    
+    try {
+      // 获取输入文本
+      const inputField = document.querySelector('.translation-input');
+      const text = inputField.value.trim();
+      
+      if (!text) {
+        alert('请输入要翻译的文本');
+        return;
+      }
+      
+      // 调用翻译API（根据你的实际情况修改）
+      const result = await this.callTranslationAPI(text);
+      
+      // 显示结果
+      this.showResult(result);
+      
+    } catch (error) {
+      console.error('翻译失败:', error);
+      alert('翻译失败，请重试');
+    } finally {
+      this.hideLoading();
+    }
+  }
+  
+  async callTranslationAPI(text) {
+    // 这里需要根据你的实际API来修改
+    // 示例：使用fetch调用翻译API
+    const response = await fetch('/api/translate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: text,
+        targetLang: 'zh-CN'  // 根据你的设置调整
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('API调用失败');
+    }
+    
+    return await response.json();
+  }
+  
+  showLoading() {
+    // 显示加载动画
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'loading';
+    loadingDiv.innerHTML = '翻译中...';
+    loadingDiv.style.position = 'fixed';
+    loadingDiv.style.top = '50%';
+    loadingDiv.style.left = '50%';
+    loadingDiv.style.transform = 'translate(-50%, -50%)';
+    loadingDiv.style.padding = '20px';
+    loadingDiv.style.background = 'rgba(0,0,0,0.7)';
+    loadingDiv.style.color = 'white';
+    loadingDiv.style.borderRadius = '10px';
+    loadingDiv.style.zIndex = '9999';
+    
+    document.body.appendChild(loadingDiv);
+    this.loadingElement = loadingDiv;
+  }
+  
+  hideLoading() {
+    if (this.loadingElement) {
+      this.loadingElement.remove();
+    }
+  }
+  
+  showResult(result) {
+    // 找到结果显示区域
+    const resultDiv = document.getElementById('translation-result') ||
+                     document.querySelector('.result-area');
+    
+    if (resultDiv) {
+      resultDiv.innerHTML = `<div class="result-text">${result.translatedText}</div>`;
+    } else {
+      // 如果没有结果区域，创建一个
+      const newResultDiv = document.createElement('div');
+      newResultDiv.className = 'translation-result';
+      newResultDiv.innerHTML = `
+        <h3>翻译结果：</h3>
+        <p>${result.translatedText}</p>
+      `;
+      newResultDiv.style.marginTop = '20px';
+      newResultDiv.style.padding = '15px';
+      newResultDiv.style.background = '#f0f0f0';
+      newResultDiv.style.borderRadius = '8px';
+      
+      // 插入到翻译按钮后面
+      const translateBtn = document.querySelector('.translate-btn');
+      translateBtn.parentNode.insertBefore(newResultDiv, translateBtn.nextSibling);
+    }
+  }
+}
+
+// 页面加载完成后初始化
+document.addEventListener('DOMContentLoaded', () => {
+  window.textTranslator = new TextTranslator();
+});
 import React, { useState } from 'react';
 import { ArrowRightLeft, Copy, Check } from 'lucide-react';
 import { AppLanguage, TranslationResource } from '../types';
