@@ -2,7 +2,7 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import { AppLanguage } from "../types";
 import { decode, decodeAudioData } from "./audioUtils";
 
-const apiKey = process.env.API_KEY || '';
+const apiKey = import.meta.env.VITE_GOOGLE_API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
 // Singleton AudioContext to prevent browser limits
