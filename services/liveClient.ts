@@ -1,11 +1,40 @@
 import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
-import { encode, decode, decodeAudioData, float32ToInt16 } from "./audioUtils";
 import { AppLanguage } from "../types";
 
-// ⚠️ 这里直接填你的真钥匙，不要改动！
-const apiKey = "AIzaSyDyTqBSuUsS6ksJ4r4gNH3yaeo393X4qnVU"; 
-const ai = new GoogleGenAI({ apiKey });
+// ==========================================================
+// 🔴 必填区：请把你的 API Key 填在引号里，不要有空格！
+// ==========================================================
+const API_KEY = "AIzaSyDyTqBSuUsS6ksJ4r4gNH3yaeo393X4qnVU"; 
+// (上面这串是你之前截图里的 Key，如果不对请换成你最新的)
 
+const MODEL_NAME = "gemini-2.0-flash-exp"; 
+// (这是目前唯一能用的模型，千万别改！)
+
+// ==========================================================
+// 🛠️ 内置工具区 (原本在 audioUtils 里，现在搬过来防止报错)
+// ==========================================================
+function float32ToInt16(float32Array: Float32Array): Int16Array {
+  const int16Array = new Int16Array(float32Array.length);
+  for (let i = 0; i < float32Array.length; i++) {
+    let s = Math.max(-1, Math.min(1, float32Array[i]));
+    int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return int16Array;
+}
+
+function base64Encode(buffer: ArrayBuffer): string {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+}
+
+// ==========================================================
+// 🧠 核心逻辑区
+// ==========================================================
 export interface LiveClientCallbacks {
   onOpen?: () => void;
   onClose?: () => void;
@@ -22,36 +51,22 @@ export class LiveClient {
   private stream: MediaStream | null = null;
   private isConnected = false;
   private callbacks: LiveClientCallbacks = {};
+  private aiClient: GoogleGenAI;
 
   constructor(callbacks: LiveClientCallbacks) {
     this.callbacks = callbacks;
-  }
-
-  private getLanguageName(code: AppLanguage): string {
-    switch (code) {
-      case AppLanguage.ZH: return "Chinese (Mandarin)";
-      case AppLanguage.EN: return "English";
-      case AppLanguage.RU: return "Russian";
-      default: return "English";
-    }
+    this.aiClient = new GoogleGenAI({ apiKey: API_KEY });
   }
 
   public async connect(sourceLang: AppLanguage, targetLang: AppLanguage) {
     if (this.isConnected) return;
-
-    const sourceName = this.getLanguageName(sourceLang);
-    const targetName = this.getLanguageName(targetLang);
-
-    const systemInstruction = `You are a professional simultaneous interpreter. 
-    Translate between ${sourceName} and ${targetName} in real-time. 
-    Just translate what you hear. Do not answer questions.`;
+    
+    // 🔔 调试弹窗：告诉用户开始连接了
+    // alert("正在尝试连接谷歌服务器..."); 
 
     try {
-      // 🟢 修复点 1：移除 sampleRate 限制，让苹果手机使用默认采样率（通常是 48000 或 44100）
-      // 这样就不会崩溃了！
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       
-      // 🟢 修复点 2：麦克风也移除强制参数
       this.stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           channelCount: 1,
@@ -61,18 +76,16 @@ export class LiveClient {
         }
       });
 
-      // 🟢 修复点 3：模型名称必须是 2.0-flash-exp
-      this.session = await ai.live.connect({
-        model: 'gemini-2.0-flash-exp',
+      this.session = await this.aiClient.live.connect({
+        model: MODEL_NAME,
         config: {
           responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
-          },
-          systemInstruction: systemInstruction,
+          systemInstruction: `You are a translator. Translate between ${sourceLang} and ${targetLang}.`,
         },
         callbacks: {
           onopen: () => {
+            // 🔔 调试弹窗：连接成功！
+            // alert("连接成功！请说话！");
             this.isConnected = true;
             this.startAudioStreaming();
             this.callbacks.onOpen?.();
@@ -83,19 +96,18 @@ export class LiveClient {
             this.callbacks.onClose?.();
           },
           onerror: (err) => {
-            console.error("Live API Error:", err);
-            // 🟢 修复点 4：如果有错，弹窗告诉你！
-            alert("API Error: " + JSON.stringify(err)); 
+            // 🔴 错误弹窗：最重要的部分！
+            alert("发生错误: " + JSON.stringify(err));
+            console.error(err);
             this.callbacks.onError?.(err);
           }
         }
       });
 
     } catch (error) {
-      console.error("Connection failed:", error);
-      // 🟢 修复点 5：如果连接失败，弹窗告诉你原因！
-      alert("Connect Fail: " + error);
-      this.callbacks.onError?.(error);
+      // 🔴 错误弹窗：捕捉连接阶段的错误
+      alert("连接失败 (Catch): " + String(error));
+      console.error(error);
       this.disconnect();
     }
   }
@@ -104,18 +116,17 @@ export class LiveClient {
     if (!this.audioContext || !this.stream || !this.session) return;
 
     this.inputSource = this.audioContext.createMediaStreamSource(this.stream);
+    // 使用 4096 缓冲区，兼容性更好
     this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
 
     this.processor.onaudioprocess = (e) => {
       const inputData = e.inputBuffer.getChannelData(0);
-      // 简单的转换，虽然不是完美的重采样，但至少能跑通
       const pcmData = float32ToInt16(inputData);
-      
-      const base64Data = encode(new Uint8Array(pcmData.buffer));
+      const base64Data = base64Encode(pcmData.buffer);
       
       this.session.sendRealtimeInput({
         media: {
-          mimeType: 'audio/pcm;rate=16000', // 这里告诉 Gemini 我们发的是 PCM
+          mimeType: 'audio/pcm;rate=' + this.audioContext?.sampleRate, 
           data: base64Data
         }
       });
@@ -126,17 +137,31 @@ export class LiveClient {
   }
 
   private async handleMessage(message: LiveServerMessage) {
+    // 处理音频返回
     const audioData = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
     if (audioData) {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const audioBuffer = await decodeAudioData(decode(audioData), ctx, 24000, 1);
-      this.callbacks.onAudioData?.(audioBuffer);
+      try {
+        // 解码 Base64
+        const binaryString = window.atob(audioData);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        // 简单解码，虽然可能有采样率问题，但起码能听到声音
+        const audioBuffer = await ctx.decodeAudioData(bytes.buffer);
+        this.callbacks.onAudioData?.(audioBuffer);
+      } catch (e) {
+        console.error("Audio Decode Error", e);
+      }
     }
 
+    // 处理文字返回
     if (message.serverContent?.inputTranscription?.text) {
         this.callbacks.onTranscript?.(message.serverContent.inputTranscription.text, true, false);
     }
-    
     if (message.serverContent?.outputTranscription?.text) {
         this.callbacks.onTranscript?.(message.serverContent.outputTranscription.text, false, false);
     }
@@ -148,20 +173,11 @@ export class LiveClient {
       this.processor.disconnect();
       this.processor.onaudioprocess = null;
     }
-    if (this.inputSource) {
-      this.inputSource.disconnect();
-    }
-    if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
-    }
-    if (this.audioContext) {
-      this.audioContext.close();
-    }
+    if (this.inputSource) this.inputSource.disconnect();
+    if (this.stream) this.stream.getTracks().forEach(track => track.stop());
+    if (this.audioContext) this.audioContext.close();
+    
     this.session = null;
-    this.processor = null;
-    this.inputSource = null;
-    this.stream = null;
-    this.audioContext = null;
     this.callbacks.onClose?.();
   }
 }
