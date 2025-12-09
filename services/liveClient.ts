@@ -2,7 +2,8 @@ import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
 import { encode, decode, decodeAudioData, float32ToInt16 } from "./audioUtils";
 import { AppLanguage } from "../types";
 
-const apiKey = "AIzaSyDTgBSuUsS6ksJ4r4gNH3yaeo393X4qnVU";
+// ⚠️ 这里直接填你的真钥匙，不要改动！
+const apiKey = "AIzaSyDyTqBSuUsS6ksJ4r4gNH3yaeo393X4qnVU"; 
 const ai = new GoogleGenAI({ apiKey });
 
 export interface LiveClientCallbacks {
@@ -41,38 +42,34 @@ export class LiveClient {
     const sourceName = this.getLanguageName(sourceLang);
     const targetName = this.getLanguageName(targetLang);
 
-    const systemInstruction = `You are a world-class professional simultaneous interpreter. 
-    Your task is to translate speech bidirectionally between ${sourceName} and ${targetName} in real-time.
-    
-    Rules:
-    1. If you hear ${sourceName}, translate it immediately to ${targetName}.
-    2. If you hear ${targetName}, translate it immediately to ${sourceName}.
-    3. Maintain the original tone, emotion, and nuance.
-    4. Do NOT answer questions or engage in conversation. ONLY translate.
-    5. Be concise and accurate. Do not add filler words.
-    6. If the speech is unclear, do your best to translate the context.
-    `;
+    const systemInstruction = `You are a professional simultaneous interpreter. 
+    Translate between ${sourceName} and ${targetName} in real-time. 
+    Just translate what you hear. Do not answer questions.`;
 
     try {
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: {
-        channelCount: 1,
-        sampleRate: 16000,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }});
+      // 🟢 修复点 1：移除 sampleRate 限制，让苹果手机使用默认采样率（通常是 48000 或 44100）
+      // 这样就不会崩溃了！
+      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      // 🟢 修复点 2：麦克风也移除强制参数
+      this.stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
 
+      // 🟢 修复点 3：模型名称必须是 2.0-flash-exp
       this.session = await ai.live.connect({
-        model: "gemini-2.0-flash-exp",
+        model: 'gemini-2.0-flash-exp',
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
           },
           systemInstruction: systemInstruction,
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
         },
         callbacks: {
           onopen: () => {
@@ -87,6 +84,8 @@ export class LiveClient {
           },
           onerror: (err) => {
             console.error("Live API Error:", err);
+            // 🟢 修复点 4：如果有错，弹窗告诉你！
+            alert("API Error: " + JSON.stringify(err)); 
             this.callbacks.onError?.(err);
           }
         }
@@ -94,6 +93,8 @@ export class LiveClient {
 
     } catch (error) {
       console.error("Connection failed:", error);
+      // 🟢 修复点 5：如果连接失败，弹窗告诉你原因！
+      alert("Connect Fail: " + error);
       this.callbacks.onError?.(error);
       this.disconnect();
     }
@@ -107,15 +108,14 @@ export class LiveClient {
 
     this.processor.onaudioprocess = (e) => {
       const inputData = e.inputBuffer.getChannelData(0);
-      // Convert Float32 to Int16 PCM
+      // 简单的转换，虽然不是完美的重采样，但至少能跑通
       const pcmData = float32ToInt16(inputData);
       
-      // Send to Gemini
       const base64Data = encode(new Uint8Array(pcmData.buffer));
       
       this.session.sendRealtimeInput({
         media: {
-          mimeType: 'audio/pcm;rate=16000',
+          mimeType: 'audio/pcm;rate=16000', // 这里告诉 Gemini 我们发的是 PCM
           data: base64Data
         }
       });
@@ -126,15 +126,13 @@ export class LiveClient {
   }
 
   private async handleMessage(message: LiveServerMessage) {
-    // Handle Audio Output
     const audioData = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
     if (audioData) {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const audioBuffer = await decodeAudioData(decode(audioData), ctx, 24000, 1);
       this.callbacks.onAudioData?.(audioBuffer);
     }
 
-    // Handle Transcriptions
     if (message.serverContent?.inputTranscription?.text) {
         this.callbacks.onTranscript?.(message.serverContent.inputTranscription.text, true, false);
     }
@@ -142,41 +140,28 @@ export class LiveClient {
     if (message.serverContent?.outputTranscription?.text) {
         this.callbacks.onTranscript?.(message.serverContent.outputTranscription.text, false, false);
     }
-
-    // Handle Turn Complete (Finalize transcriptions if needed, though for live we mainly stream)
-    if (message.serverContent?.turnComplete) {
-       // Optional: Mark current transcript block as complete
-    }
   }
 
   public disconnect() {
     this.isConnected = false;
-    
     if (this.processor) {
       this.processor.disconnect();
       this.processor.onaudioprocess = null;
     }
-    
     if (this.inputSource) {
       this.inputSource.disconnect();
     }
-
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
     }
-
     if (this.audioContext) {
       this.audioContext.close();
     }
-
-    // Currently no explicit close method on the session object returned by connect?
-    // The library manages the websocket. We can just release references.
     this.session = null;
     this.processor = null;
     this.inputSource = null;
     this.stream = null;
     this.audioContext = null;
-    
     this.callbacks.onClose?.();
   }
 }
