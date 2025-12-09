@@ -168,16 +168,35 @@ export class LiveClient {
   }
 
   public disconnect() {
+    console.log('正在停止录音...');  // 添加这行，用于调试
     this.isConnected = false;
-    if (this.processor) {
-      this.processor.disconnect();
-      this.processor.onaudioprocess = null;
-    }
-    if (this.inputSource) this.inputSource.disconnect();
-    if (this.stream) this.stream.getTracks().forEach(track => track.stop());
-    if (this.audioContext) this.audioContext.close();
     
-    this.session = null;
-    this.callbacks.onClose?.();
-  }
+    // 先停止所有音频处理
+    try {
+        if (this.processor) {
+            this.processor.disconnect();
+            this.processor.onaudioprocess = null;  // 修正：应该是onaudioprocess
+            console.log('音频处理器已停止');
+        }
+        if (this.audioSource) this.audioSource.disconnect();  // 修正：应该是audioSource
+        if (this.stream) {
+            this.stream.getTracks().forEach(track => {
+                console.log('停止音轨:', track.kind);
+                track.stop();  // 停止每个音轨
+            });
+        }
+        if (this.audioContext) {
+            this.audioContext.close().then(() => {
+                console.log('音频上下文已关闭');
+            });
+        }
+    } catch (error) {
+        console.error('停止录音时出错:', error);
+    }
+    
+    this.stream = null;
+    // 添加延迟，防止按钮状态立即变化
+    setTimeout(() => {
+        this.callbacks.onClose();
+    }, 300);
 }
