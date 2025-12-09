@@ -1,22 +1,10 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { AppLanguage } from "../types";
-import { decode, decodeAudioData } from "./audioUtils";
 
-const apiKey = import.meta.env.VITE_GOOGLE_API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+// 🔴 同样填入你的真 Key
+const API_KEY = "AIzaSyDyTqBSuUsS6ksJ4r4gNH3yaeo393X4qnVU"; 
 
-// Singleton AudioContext to prevent browser limits
-let audioContext: AudioContext | null = null;
-
-const getAudioContext = () => {
-  if (!audioContext) {
-    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
-  }
-  if (audioContext.state === 'suspended') {
-    audioContext.resume();
-  }
-  return audioContext;
-};
+const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 export const translateText = async (
   text: string,
@@ -26,62 +14,19 @@ export const translateText = async (
   if (!text.trim()) return "";
 
   try {
-    const prompt = `Translate the following text from ${sourceLang} to ${targetLang}. Only output the translated text, no explanations. Text: "${text}"`;
+    const model = ai.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
     
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-    });
+    // 构建提示词
+    const prompt = `Translate the following text from ${sourceLang} to ${targetLang}. 
+    Only output the translated text, no explanations.
     
-    return response.text?.trim() || "";
+    Text: ${text}`;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text();
   } catch (error) {
-    console.error("Translation error:", error);
-    return "Translation failed. Please try again.";
+    console.error("Text Translation Error:", error);
+    return "翻译失败，请检查网络或 Key。";
   }
-};
-
-export const synthesizeSpeech = async (text: string, lang: AppLanguage) => {
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Kore' },
-            },
-        },
-      },
-    });
-
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (base64Audio) {
-        await playAudio(base64Audio);
-    }
-  } catch (error) {
-    console.error("TTS error:", error);
-  }
-};
-
-const playAudio = async (base64EncodedAudioString: string) => {
-    try {
-        const ctx = getAudioContext();
-        const outputNode = ctx.createGain();
-        outputNode.connect(ctx.destination);
-        
-        const audioBuffer = await decodeAudioData(
-            decode(base64EncodedAudioString),
-            ctx,
-            24000,
-            1,
-        );
-        
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(outputNode);
-        source.start();
-    } catch (e) {
-        console.error("Error playing audio", e);
-    }
 };
