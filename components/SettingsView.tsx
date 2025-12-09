@@ -1,3 +1,234 @@
+// 语言包管理器
+class LanguagePackManager {
+  constructor() {
+    this.STORAGE_KEY = 'downloaded_language_packs';
+    this.init();
+  }
+  
+  init() {
+    console.log('初始化语言包管理器');
+    
+    // 页面加载时恢复状态
+    this.restoreDownloadStatus();
+    
+    // 监听页面可见性变化（切换标签页或应用）
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        console.log('页面重新显示，恢复下载状态');
+        this.restoreDownloadStatus();
+      }
+    });
+    
+    // 找到所有下载按钮并绑定事件
+    setTimeout(() => {
+      this.bindDownloadButtons();
+    }, 1000); // 等待1秒确保DOM完全加载
+  }
+  
+  // 绑定下载按钮事件
+  bindDownloadButtons() {
+    const downloadButtons = document.querySelectorAll('.download-btn, button[onclick*="download"]');
+    
+    console.log('找到下载按钮数量:', downloadButtons.length);
+    
+    downloadButtons.forEach(button => {
+      // 移除旧的事件监听器（防止重复绑定）
+      const newButton = button.cloneNode(true);
+      button.parentNode.replaceChild(newButton, button);
+      
+      // 重新绑定事件
+      newButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.handleDownload(e.target);
+      });
+    });
+  }
+  
+  // 处理下载
+  async handleDownload(button) {
+    // 获取语言信息
+    const languageCard = button.closest('.language-card, .lang-item, div');
+    let languageName = '未知语言';
+    
+    if (languageCard) {
+      const nameElement = languageCard.querySelector('.lang-name, h3, h4, strong');
+      if (nameElement) {
+        languageName = nameElement.textContent;
+      }
+    }
+    
+    console.log(`开始下载: ${languageName}`);
+    
+    // 禁用按钮，防止重复点击
+    button.disabled = true;
+    button.textContent = '下载中...';
+    button.style.opacity = '0.7';
+    
+    try {
+      // 模拟下载过程（这里需要替换为实际的下载代码）
+      await this.downloadLanguagePack(languageName);
+      
+      // 下载成功，保存状态
+      this.saveDownloadStatus(languageName, true);
+      
+      // 更新按钮状态
+      button.textContent = '已下载 ✓';
+      button.style.background = '#4CAF50';
+      button.disabled = true;
+      
+      // 显示成功消息
+      this.showToast(`${languageName} 下载完成！`);
+      
+    } catch (error) {
+      console.error('下载失败:', error);
+      button.textContent = '下载失败，重试';
+      button.disabled = false;
+      button.style.opacity = '1';
+      
+      this.showToast('下载失败，请检查网络连接');
+    }
+  }
+  
+  // 保存下载状态到本地存储
+  saveDownloadStatus(languageName, isDownloaded) {
+    try {
+      // 读取现有的下载状态
+      const currentStatus = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '{}');
+      
+      // 更新状态
+      currentStatus[languageName] = {
+        downloaded: isDownloaded,
+        timestamp: new Date().toISOString()
+      };
+      
+      // 保存到localStorage
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(currentStatus));
+      
+      console.log('已保存下载状态:', currentStatus);
+      
+      // 同时保存到sessionStorage作为备份
+      sessionStorage.setItem(`lang_${languageName}`, isDownloaded);
+      
+    } catch (error) {
+      console.error('保存状态失败:', error);
+      
+      // 如果localStorage失败，尝试使用cookie
+      document.cookie = `lang_${languageName}=${isDownloaded}; max-age=2592000; path=/`; // 30天过期
+    }
+  }
+  
+  // 恢复下载状态
+  restoreDownloadStatus() {
+    try {
+      // 从localStorage读取状态
+      const savedStatus = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '{}');
+      
+      console.log('恢复下载状态:', savedStatus);
+      
+      // 遍历所有语言包，更新UI
+      Object.keys(savedStatus).forEach(languageName => {
+        if (savedStatus[languageName].downloaded) {
+          this.updateLanguageUI(languageName, true);
+        }
+      });
+      
+    } catch (error) {
+      console.error('恢复状态失败:', error);
+      
+      // 尝试从cookie恢复
+      this.restoreFromCookies();
+    }
+  }
+  
+  // 更新语言包UI
+  updateLanguageUI(languageName, isDownloaded) {
+    // 找到对应的语言包元素
+    const languageCards = document.querySelectorAll('.language-card, .lang-item, div');
+    
+    languageCards.forEach(card => {
+      const nameElement = card.querySelector('.lang-name, h3, h4, strong');
+      if (nameElement && nameElement.textContent.includes(languageName)) {
+        const button = card.querySelector('.download-btn, button');
+        if (button) {
+          if (isDownloaded) {
+            button.textContent = '已下载 ✓';
+            button.style.background = '#4CAF50';
+            button.disabled = true;
+            button.style.opacity = '0.7';
+          } else {
+            button.textContent = '下载';
+            button.disabled = false;
+            button.style.opacity = '1';
+          }
+        }
+      }
+    });
+  }
+  
+  // 模拟下载过程（需要替换为实际下载代码）
+  async downloadLanguagePack(languageName) {
+    return new Promise((resolve, reject) => {
+      console.log(`模拟下载语言包: ${languageName}`);
+      
+      // 模拟网络延迟
+      setTimeout(() => {
+        // 这里应该替换为实际的下载逻辑
+        // 例如：fetch下载文件，保存到IndexedDB等
+        
+        // 模拟下载成功
+        resolve();
+      }, 2000); // 模拟2秒下载时间
+    });
+  }
+  
+  // 显示提示消息
+  showToast(message) {
+    // 创建提示框
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    toast.style.position = 'fixed';
+    toast.style.bottom = '20px';
+    toast.style.left = '50%';
+    toast.style.transform = 'translateX(-50%)';
+    toast.style.background = 'rgba(0, 0, 0, 0.8)';
+    toast.style.color = 'white';
+    toast.style.padding = '12px 24px';
+    toast.style.borderRadius = '20px';
+    toast.style.zIndex = '10000';
+    toast.style.fontSize = '14px';
+    
+    document.body.appendChild(toast);
+    
+    // 3秒后自动消失
+    setTimeout(() => {
+      toast.remove();
+    }, 3000);
+  }
+  
+  // 从cookie恢复状态（备用方案）
+  restoreFromCookies() {
+    const cookies = document.cookie.split('; ');
+    cookies.forEach(cookie => {
+      if (cookie.startsWith('lang_')) {
+        const [name, value] = cookie.split('=');
+        const languageName = name.replace('lang_', '');
+        const isDownloaded = value === 'true';
+        
+        if (isDownloaded) {
+          this.updateLanguageUI(languageName, true);
+        }
+      }
+    });
+  }
+}
+
+// 页面加载后初始化
+document.addEventListener('DOMContentLoaded', () => {
+  // 延迟初始化，确保DOM完全加载
+  setTimeout(() => {
+    window.languagePackManager = new LanguagePackManager();
+  }, 500);
+});
 import React, { useState } from 'react';
 import { Download, WifiOff, CheckCircle2, CloudLightning } from 'lucide-react';
 import { TranslationResource, AppLanguage } from '../types';
