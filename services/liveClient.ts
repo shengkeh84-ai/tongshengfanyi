@@ -2,7 +2,7 @@ import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
 import { encode, decode, decodeAudioData, float32ToInt16 } from "./audioUtils";
 import { AppLanguage } from "../types";
 
-const apiKey = import.meta.env.VITE_GOOGLE_API_KEY || '';
+const apiKey = "AIzaSyDTgBSuUsS6ksJ4r4gNH3yaeo393X4qnVU";
 const ai = new GoogleGenAI({ apiKey });
 
 export interface LiveClientCallbacks {
@@ -64,7 +64,7 @@ export class LiveClient {
       }});
 
       this.session = await ai.live.connect({
-        model: 'gemini-2.0-flash-exp',
+        model: "gemini-2.0-flash-exp",
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
