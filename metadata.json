@@ -1,0 +1,7 @@
+{
+  "name": "LinguaFlow - Simultaneous Interpreter",
+  "description": "A real-time simultaneous translation app supporting Chinese, English, and Russian with conversation mode and offline capabilities.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
